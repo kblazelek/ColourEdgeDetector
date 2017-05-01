@@ -54,13 +54,31 @@ rgb8_image_t ConvertQuaternionMatrixToRGBImage(vector<vector<quaternion<double>>
 	return img;
 }
 
+gray8_image_t ConvertQuaternionMatrixToGrayImage(vector<vector<quaternion<double>>> quaternionMatrix)
+{
+	cout << "Zamiana macierzy kwaternionow na obraz w skali szarosci... " << "\n";
+	int imageHeight = quaternionMatrix.size();
+	int imageWidth = quaternionMatrix[0].size();
+	gray8_image_t img(imageWidth, imageHeight);
+	gray8_image_t::view_t v = view(img);
+	for (int x = 0; x < imageWidth; ++x)
+	{
+		for (int y = 0; y < imageHeight; ++y)
+		{
+			double a = quaternionMatrix[y][x].R_component_1() + 127.5;
+			v(x, y) = gray8_pixel_t((unsigned char)a);
+		}
+	}
+	return img;
+}
+
 quaternion<double> normalizeQuaternion(const quaternion<double> &q)
 {
-	double w = q.R_component_1();
-	double x = q.R_component_2();
-	double y = q.R_component_3();
-	double z = q.R_component_4();
-	double inv_len = 1.0f / std::sqrt(w * w + x * x + y * y + z * z);
+	double a = q.R_component_1();
+	double i = q.R_component_2();
+	double j = q.R_component_3();
+	double k = q.R_component_4();
+	double inv_len = 1.0f / std::sqrt(a * a + i * i + j * j + k * k);
 	return q * inv_len;
 }
 
@@ -82,12 +100,12 @@ vector<vector<quaternion<double>>> ApplyHypercomplexFilter(vector<vector<quatern
 	leftMask[0][0] = normalizedQuaternionC2 / sqrt(6);
 	leftMask[0][1] = normalizedQuaternionC2 / sqrt(6);
 	leftMask[0][2] = normalizedQuaternionC2 / sqrt(6);
-	leftMask[2][0] = 1 / sqrt(6);
-	leftMask[2][1] = 1 / sqrt(6);
-	leftMask[2][2] = 1 / sqrt(6);
-	rightMask[0][0] = 1 / sqrt(6);
-	rightMask[0][1] = 1 / sqrt(6);
-	rightMask[0][2] = 1 / sqrt(6);
+	leftMask[2][0] = 1.0f / sqrt(6);
+	leftMask[2][1] = 1.0f / sqrt(6);
+	leftMask[2][2] = 1.0f / sqrt(6);
+	rightMask[0][0] = 1.0f / sqrt(6);
+	rightMask[0][1] = 1.0f / sqrt(6);
+	rightMask[0][2] = 1.0f / sqrt(6);
 	rightMask[2][0] = normalizedQuaternionC1 / sqrt(6);
 	rightMask[2][1] = normalizedQuaternionC1 / sqrt(6);
 	rightMask[2][2] = normalizedQuaternionC1 / sqrt(6);
@@ -102,7 +120,7 @@ vector<vector<quaternion<double>>> ApplyHypercomplexFilter(vector<vector<quatern
 			{
 				for (int y = 0; y < 3; ++y)
 				{
-					imageAfterFilter[t][s] += leftMask[x][y] * quaternionMatrix[t - y][s - x] * rightMask[x][y];
+					imageAfterFilter[t][s] += leftMask[y][x] * quaternionMatrix[t - y][s - x] * rightMask[y][x];
 				}
 			}
 		}
@@ -112,18 +130,21 @@ vector<vector<quaternion<double>>> ApplyHypercomplexFilter(vector<vector<quatern
 int main()
 {
 	rgb8_image_t img;
-	jpeg_read_image("..\\..\\Images\\tulips.jpg", img);
-	//jpeg_read_image("..\\..\\Images\\colours.jpg", img);
+	//jpeg_read_image("..\\..\\Images\\tulips.jpg", img);
+	jpeg_read_image("..\\..\\Images\\colours.jpg", img);
 	int imageWidth = img.width();
 	int imageHeight = img.height();
 	printf("Image width: %i\n", imageWidth);
 	printf("Image height: %i\n", imageHeight);
 	vector<vector<quaternion<double>>> quaternionMatrix = ConvertRGBImageToQuaternionMatrix(img);
-	rgb8_pixel_t color1(237, 157, 157); // czerwony
-	rgb8_pixel_t color2(255, 255, 255); // bialy
+	rgb8_pixel_t color1(255, 0, 0); // czerwony
+	rgb8_pixel_t color2(0, 0, 255); // niebieski
 	vector<vector<quaternion<double>>> quaternionMatrixAfterFilter = ApplyHypercomplexFilter(quaternionMatrix, color1, color2);
 	rgb8_image_t imageAfterConversion = ConvertQuaternionMatrixToRGBImage(quaternionMatrixAfterFilter);
-	jpeg_write_view("imageAfterHypercomplexFilter.jpg", view(imageAfterConversion));
+	jpeg_write_view("RGBImageAfterHypercomplexFilter.jpg", view(imageAfterConversion));
+	gray8_image_t test = ConvertQuaternionMatrixToGrayImage(quaternionMatrixAfterFilter);
+	jpeg_write_view("GrayScaleImageAfterHypercomplexFilter.jpg", view(test));
+	cout << "Gotowe\n";
 	getchar();
 	return 0;
 }
