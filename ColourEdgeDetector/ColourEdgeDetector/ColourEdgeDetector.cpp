@@ -110,7 +110,7 @@ vector<vector<quaternion<double>>> ApplyHypercomplexFilter(vector<vector<quatern
 	rightMask[2][1] = normalizedQuaternionC1 / sqrt(6);
 	rightMask[2][2] = normalizedQuaternionC1 / sqrt(6);
 
-	// Zaczynamy od 2 indeksu (3 pixela) od lewej i gory, bo nie policzymy maski dla wczeœniejszych (nie maja sasiadow na lewo/od gory)
+	// Zaczynamy od 2 indeksu (3 pixela) od lewej i gory, bo nie policzymy maski dla wczeÅ“niejszych (nie maja sasiadow na lewo/od gory)
 	for (int s = 2; s < imageWidth; ++s)
 	{
 		for (int t = 2; t < imageHeight; ++t)
@@ -127,6 +127,60 @@ vector<vector<quaternion<double>>> ApplyHypercomplexFilter(vector<vector<quatern
 	}
 	return imageAfterFilter;
 }
+// <KAMIL>
+quaternion<double> convertColorToQuaternion(rgb8_pixel_t color) {
+	quaternion<double> quaternion(0, 
+								  color[0] - MID_GREY_COLOR, 
+								  color[1] - MID_GREY_COLOR, 
+								  color[2] - MID_GREY_COLOR);
+	return quaternion;
+}
+
+double quaternionMagnitude(const quaternion<double> quaternion) {
+	return sqrt(pow(quaternion.R_component_1(), 2)
+			  + pow(quaternion.R_component_2(), 2)
+			  + pow(quaternion.R_component_3(), 2)
+			  + pow(quaternion.R_component_4(), 2));
+}
+
+double calculateQuaternionScalar(rgb8_pixel_t color1, rgb8_pixel_t color2) {
+	return -(quaternionMagnitude(convertColorToQuaternion(color1))
+		   + quaternionMagnitude(convertColorToQuaternion(color2)))
+		   / 2;
+}
+
+bool compareQuaternionScalarCriteria(const quaternion<double> quaternion, rgb8_pixel_t color1, rgb8_pixel_t color2) {
+	return calculateQuaternionScalar(color1, color2) == quaternion.R_component_1() ? true : false;
+}
+
+double quaternionVector(const quaternion<double> quaternion) {
+	return sqrt(pow(quaternion.R_component_2(), 2)
+			  + pow(quaternion.R_component_3(), 2)
+			  + pow(quaternion.R_component_4(), 2));
+}
+
+double calculateQuaternionVector(const quaternion<double> quaternion) {
+	return quaternionVector(quaternion);
+}
+
+bool compareQuaternionVectorCriteria(const quaternion<double> quaternion) {
+	return calculateQuaternionVector(quaternion) == 0 ? true : false;
+}
+
+bool compareNormalizedQuaternionScalarCriteria(quaternion<double> quaternion) {
+	return normalizeQuaternion(quaternion).R_component_1 < 0 ? true : false;
+}
+
+bool compareNormalizedNonRelaxedQuaternionVectorCriteria(const quaternion<double> quaternion) {
+	return quaternionVector(normalizeQuaternion(quaternion)) == 0 ? true : false;
+}
+
+void detectIdealEdgeByThresholding() {
+	if (compareQuaternionScalarCriteria && compareQuaternionVectorCriteria) {
+
+	}
+}
+// </KAMIL>
 int main()
 {
 	rgb8_image_t img;
