@@ -130,33 +130,33 @@ vector<vector<quaternion<double>>> ApplyHypercomplexFilter(vector<vector<quatern
 // <KAMIL>
 quaternion<double> convertColorToQuaternion(rgb8_pixel_t color) {
 	quaternion<double> quaternion(0, 
-								  color[0] - MID_GREY_COLOR, 
-								  color[1] - MID_GREY_COLOR, 
-								  color[2] - MID_GREY_COLOR);
+				      color[0] - MID_GREY_COLOR, 
+				      color[1] - MID_GREY_COLOR, 
+				      color[2] - MID_GREY_COLOR);
 	return quaternion;
 }
 
 double quaternionMagnitude(const quaternion<double> quaternion) {
 	return sqrt(pow(quaternion.R_component_1(), 2)
-			  + pow(quaternion.R_component_2(), 2)
-			  + pow(quaternion.R_component_3(), 2)
-			  + pow(quaternion.R_component_4(), 2));
+	            + pow(quaternion.R_component_2(), 2)
+		    + pow(quaternion.R_component_3(), 2)
+	            + pow(quaternion.R_component_4(), 2));
 }
 
-double calculateQuaternionScalar(rgb8_pixel_t color1, rgb8_pixel_t color2) {
+double calculateQuaternionScalarCriteria(rgb8_pixel_t color1, rgb8_pixel_t color2) {
 	return -(quaternionMagnitude(convertColorToQuaternion(color1))
-		   + quaternionMagnitude(convertColorToQuaternion(color2)))
-		   / 2;
+	         + quaternionMagnitude(convertColorToQuaternion(color2)))
+	         / 2;
 }
 
 bool compareQuaternionScalarCriteria(const quaternion<double> quaternion, rgb8_pixel_t color1, rgb8_pixel_t color2) {
-	return calculateQuaternionScalar(color1, color2) == quaternion.R_component_1() ? true : false;
+	return calculateQuaternionScalarCriteria(color1, color2) == quaternion.R_component_1() ? true : false;
 }
 
 double quaternionVector(const quaternion<double> quaternion) {
 	return sqrt(pow(quaternion.R_component_2(), 2)
-			  + pow(quaternion.R_component_3(), 2)
-			  + pow(quaternion.R_component_4(), 2));
+		    + pow(quaternion.R_component_3(), 2)
+		    + pow(quaternion.R_component_4(), 2));
 }
 
 double calculateQuaternionVector(const quaternion<double> quaternion) {
