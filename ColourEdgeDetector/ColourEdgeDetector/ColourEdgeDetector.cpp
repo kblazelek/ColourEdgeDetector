@@ -7,6 +7,7 @@
 #include <boost/gil/extension/io/jpeg_io.hpp>
 #include <boost/math/quaternion.hpp>
 #include <boost/numeric/ublas/vector.hpp>
+#include <cmath>
 
 using namespace boost::gil;
 using namespace boost::math;
@@ -89,7 +90,54 @@ quaternion<double> normalizeQuaternion(const quaternion<double> &q)
 	double inv_len = 1.0f / std::sqrt(a * a + i * i + j * j + k * k);
 	return q * inv_len;
 }
+gray8_image_t ApplyRelaxedThreshold(vector<vector<quaternion<double>>> quaternionMatrix, rgb8_pixel_t color1, rgb8_pixel_t color2)
+{
+	cout << "Progowanie i zamiana macierzy kwaternionow na obraz w skali szarosci... " << "\n";
+	int imageWidth = quaternionMatrix.size();
+	int imageHeight = quaternionMatrix[0].size();
+	gray8_image_t img(imageWidth, imageHeight);
+	gray8_image_t::view_t v = view(img);
+	// Zamiana na czyste kwaterniony kolorow, pomiedzy ktorymi szukamy krawedzi
+	quaternion<double> quaternionC1(0, color1[0] - MID_GREY_COLOR, color1[1] - MID_GREY_COLOR, color1[2] - MID_GREY_COLOR);
+	quaternion<double> quaternionC2(0, color2[0] - MID_GREY_COLOR, color2[1] - MID_GREY_COLOR, color2[2] - MID_GREY_COLOR);
 
+	// Normalizacja czystych kwaternionow
+	quaternion<double> normalizedQuaternionC1 = normalizeQuaternion(quaternionC1);
+	quaternion<double> normalizedQuaternionC2 = normalizeQuaternion(quaternionC2);
+	double a1 = normalizedQuaternionC1.R_component_1();
+	double i1 = normalizedQuaternionC1.R_component_2();
+	double j1 = normalizedQuaternionC1.R_component_3();
+	double k1 = normalizedQuaternionC1.R_component_4();
+	double a2 = normalizedQuaternionC2.R_component_1();
+	double i2 = normalizedQuaternionC2.R_component_2();
+	double j2 = normalizedQuaternionC2.R_component_3();
+	double k2 = normalizedQuaternionC2.R_component_4();
+
+	double cosinusBetweenColours = a1*a2 + i1*i2 + j1*j2 + k1*k2;
+	double angleBetweenColours = acos(cosinusBetweenColours);
+	double thresholdValue = min(0.204, tan(angleBetweenColours / 2));
+	for (int x = 0; x < imageWidth; ++x)
+	{
+		for (int y = 0; y < imageHeight; ++y)
+		{
+			double a = quaternionMatrix[x][y].R_component_1();
+			double i = quaternionMatrix[x][y].R_component_2();
+			double j = quaternionMatrix[x][y].R_component_3();
+			double k = quaternionMatrix[x][y].R_component_4();
+			double vectorModule = sqrt(i*i + j*j + k*k);
+			double scalarModule = sqrt(a*a);
+			if (vectorModule/scalarModule < thresholdValue) // Mamy krawedz
+			{
+				v(x, y) = gray8_pixel_t(0);
+			}
+			else // Nie mamy krawedzi
+			{
+				v(x, y) = gray8_pixel_t(255);
+			}
+		}
+	}
+	return img;
+}
 vector<vector<quaternion<double>>> ApplyHypercomplexFilter(vector<vector<quaternion<double>>> quaternionMatrix, rgb8_pixel_t color1, rgb8_pixel_t color2)
 {
 	cout << "Stosowanie filtru hiperzespolonego... " << "\n";
@@ -211,10 +259,12 @@ int main()
 	rgb8_pixel_t color1(255, 0, 0); // czerwony
 	rgb8_pixel_t color2(0, 0, 255); // niebieski
 	vector<vector<quaternion<double>>> quaternionMatrixAfterFilter = ApplyHypercomplexFilter(quaternionMatrix, color1, color2);
-	rgb8_image_t imageAfterConversion = ConvertQuaternionMatrixToRGBImage(quaternionMatrixAfterFilter);
-	jpeg_write_view("RGBImageAfterHypercomplexFilter.jpg", view(imageAfterConversion));
-	gray8_image_t test = ConvertQuaternionMatrixToGrayImage(quaternionMatrixAfterFilter);
-	jpeg_write_view("GrayScaleImageAfterHypercomplexFilter.jpg", view(test));
+	rgb8_image_t vectorImage = ConvertQuaternionMatrixToRGBImage(quaternionMatrixAfterFilter);
+	jpeg_write_view("RGBImageAfterHypercomplexFilter.jpg", view(vectorImage));
+	gray8_image_t scalarImage = ConvertQuaternionMatrixToGrayImage(quaternionMatrixAfterFilter);
+	jpeg_write_view("GrayScaleImageAfterHypercomplexFilter.jpg", view(scalarImage));
+	gray8_image_t edgeImage = ApplyRelaxedThreshold(quaternionMatrixAfterFilter, color1, color2);
+	jpeg_write_view("Edge.jpg", view(edgeImage));
 	cout << "Gotowe\n";
 	getchar();
 	return 0;
