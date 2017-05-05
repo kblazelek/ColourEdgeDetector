@@ -13,6 +13,25 @@ using namespace boost::gil;
 using namespace boost::math;
 using namespace std;
 const double MID_GREY_COLOR = 127.5;
+
+quaternion<double> ConvertColorToQuaternion(rgb8_pixel_t color)
+{
+	quaternion<double> quaternion(0,
+		color[0] - MID_GREY_COLOR,
+		color[1] - MID_GREY_COLOR,
+		color[2] - MID_GREY_COLOR);
+	return quaternion;
+}
+
+
+rgb8_pixel_t ConvertQuaternionToColor(quaternion<double> quaternion)
+{
+	unsigned int red = (unsigned int)(quaternion.R_component_2() + MID_GREY_COLOR);
+	unsigned int green = (unsigned int)(quaternion.R_component_3() + MID_GREY_COLOR);
+	unsigned int blue = (unsigned int)(quaternion.R_component_4() + MID_GREY_COLOR);
+	return rgb8_pixel_t(red, green, blue);
+}
+
 vector<vector<quaternion<double>>> ConvertRGBImageToQuaternionMatrix(rgb8_image_t &image)
 {
 	// Obraz 768x512x3 jest zamieniany na macierz kwaternionow o rozmiarze 768x512.
@@ -34,10 +53,7 @@ vector<vector<quaternion<double>>> ConvertRGBImageToQuaternionMatrix(rgb8_image_
 		rgb8_view_t::y_iterator columnIterator = image._view.col_begin(column);
 		for (int row = 0; row < imageHeight; ++row)
 		{
-			double red = columnIterator[row][0];
-			double green = columnIterator[row][1];
-			double blue = columnIterator[row][2];
-			quaternionMatrix[column][row] = quaternion<double>(0, red - MID_GREY_COLOR, green - MID_GREY_COLOR, blue - MID_GREY_COLOR);
+			quaternionMatrix[column][row] = ConvertColorToQuaternion(columnIterator[row]);
 		}
 	}
 	return quaternionMatrix;
@@ -54,10 +70,7 @@ rgb8_image_t ConvertQuaternionMatrixToRGBImage(vector<vector<quaternion<double>>
 	{
 		for (int y = 0; y < imageHeight; ++y)
 		{
-			double r = quaternionMatrix[x][y].R_component_2() + MID_GREY_COLOR;
-			double g = quaternionMatrix[x][y].R_component_3() + MID_GREY_COLOR;
-			double b = quaternionMatrix[x][y].R_component_4() + MID_GREY_COLOR;
-			v(x, y) = rgb8_pixel_t((unsigned char)r, (unsigned char)g, (unsigned char)b);
+			v(x, y) = ConvertQuaternionToColor(quaternionMatrix[x][y]);
 		}
 	}
 	return img;
@@ -81,7 +94,7 @@ gray8_image_t ConvertQuaternionMatrixToGrayImage(vector<vector<quaternion<double
 	return img;
 }
 
-quaternion<double> normalizeQuaternion(const quaternion<double> &q)
+quaternion<double> NormalizeQuaternion(const quaternion<double> &q)
 {
 	double a = q.R_component_1();
 	double i = q.R_component_2();
@@ -98,12 +111,14 @@ gray8_image_t ApplyRelaxedThreshold(vector<vector<quaternion<double>>> quaternio
 	gray8_image_t img(imageWidth, imageHeight);
 	gray8_image_t::view_t v = view(img);
 	// Zamiana na czyste kwaterniony kolorow, pomiedzy ktorymi szukamy krawedzi
-	quaternion<double> quaternionC1(0, color1[0] - MID_GREY_COLOR, color1[1] - MID_GREY_COLOR, color1[2] - MID_GREY_COLOR);
-	quaternion<double> quaternionC2(0, color2[0] - MID_GREY_COLOR, color2[1] - MID_GREY_COLOR, color2[2] - MID_GREY_COLOR);
+	quaternion<double> quaternionC1 = ConvertColorToQuaternion(color1);
+	quaternion<double> quaternionC2 = ConvertColorToQuaternion(color2);
 
 	// Normalizacja czystych kwaternionow
-	quaternion<double> normalizedQuaternionC1 = normalizeQuaternion(quaternionC1);
-	quaternion<double> normalizedQuaternionC2 = normalizeQuaternion(quaternionC2);
+	quaternion<double> normalizedQuaternionC1 = NormalizeQuaternion(quaternionC1);
+	quaternion<double> normalizedQuaternionC2 = NormalizeQuaternion(quaternionC2);
+
+	// Liczenie wartosci progowej
 	double a1 = normalizedQuaternionC1.R_component_1();
 	double i1 = normalizedQuaternionC1.R_component_2();
 	double j1 = normalizedQuaternionC1.R_component_3();
@@ -112,10 +127,11 @@ gray8_image_t ApplyRelaxedThreshold(vector<vector<quaternion<double>>> quaternio
 	double i2 = normalizedQuaternionC2.R_component_2();
 	double j2 = normalizedQuaternionC2.R_component_3();
 	double k2 = normalizedQuaternionC2.R_component_4();
-
 	double cosinusBetweenColours = a1*a2 + i1*i2 + j1*j2 + k1*k2;
 	double angleBetweenColours = acos(cosinusBetweenColours);
 	double thresholdValue = min(0.204, tan(angleBetweenColours / 2));
+
+	// Progowanie
 	for (int x = 0; x < imageWidth; ++x)
 	{
 		for (int y = 0; y < imageHeight; ++y)
@@ -126,13 +142,13 @@ gray8_image_t ApplyRelaxedThreshold(vector<vector<quaternion<double>>> quaternio
 			double k = quaternionMatrix[x][y].R_component_4();
 			double vectorModule = sqrt(i*i + j*j + k*k);
 			double scalarModule = sqrt(a*a);
-			if (vectorModule/scalarModule < thresholdValue) // Mamy krawedz
+			if (a < 0 && vectorModule/scalarModule < thresholdValue) // Mamy krawedz
 			{
-				v(x, y) = gray8_pixel_t(0);
+				v(x, y) = gray8_pixel_t(0); // Czarny pixel
 			}
 			else // Nie mamy krawedzi
 			{
-				v(x, y) = gray8_pixel_t(255);
+				v(x, y) = gray8_pixel_t(255); // Bialy pixel
 			}
 		}
 	}
@@ -151,12 +167,12 @@ vector<vector<quaternion<double>>> ApplyHypercomplexFilter(vector<vector<quatern
 	vector<vector<quaternion<double>>> imageAfterFilter(imageWidth, columnOfEmptyQuaternionsForImage);
 
 	// Zamiana na czyste kwaterniony kolorow, pomiedzy ktorymi szukamy krawedzi
-	quaternion<double> quaternionC1(0, color1[0] - MID_GREY_COLOR, color1[1] - MID_GREY_COLOR, color1[2] - MID_GREY_COLOR);
-	quaternion<double> quaternionC2(0, color2[0] - MID_GREY_COLOR, color2[1] - MID_GREY_COLOR, color2[2] - MID_GREY_COLOR);
+	quaternion<double> quaternionC1 = ConvertColorToQuaternion(color1);
+	quaternion<double> quaternionC2 = ConvertColorToQuaternion(color2);
 
 	// Normalizacja czystych kwaternionow
-	quaternion<double> normalizedQuaternionC1 = normalizeQuaternion(quaternionC1);
-	quaternion<double> normalizedQuaternionC2 = normalizeQuaternion(quaternionC2);
+	quaternion<double> normalizedQuaternionC1 = NormalizeQuaternion(quaternionC1);
+	quaternion<double> normalizedQuaternionC2 = NormalizeQuaternion(quaternionC2);
 
 	// Lewa maska
 	leftMask[0][0] = normalizedQuaternionC2 / sqrt(6);
@@ -191,73 +207,25 @@ vector<vector<quaternion<double>>> ApplyHypercomplexFilter(vector<vector<quatern
 	}
 	return imageAfterFilter;
 }
-// <KAMIL>
-quaternion<double> convertColorToQuaternion(rgb8_pixel_t color) {
-	quaternion<double> quaternion(0, 
-				      color[0] - MID_GREY_COLOR, 
-				      color[1] - MID_GREY_COLOR, 
-				      color[2] - MID_GREY_COLOR);
-	return quaternion;
-}
 
-double quaternionMagnitude(const quaternion<double> quaternion) {
-	return sqrt(pow(quaternion.R_component_1(), 2)
-	            + pow(quaternion.R_component_2(), 2)
-		    + pow(quaternion.R_component_3(), 2)
-	            + pow(quaternion.R_component_4(), 2));
-}
-
-double calculateQuaternionScalarCriteria(rgb8_pixel_t color1, rgb8_pixel_t color2) {
-	return -(quaternionMagnitude(convertColorToQuaternion(color1))
-	         + quaternionMagnitude(convertColorToQuaternion(color2)))
-	         / 2;
-}
-
-bool compareQuaternionScalarCriteria(const quaternion<double> quaternion, rgb8_pixel_t color1, rgb8_pixel_t color2) {
-	return calculateQuaternionScalarCriteria(color1, color2) == quaternion.R_component_1() ? true : false;
-}
-
-double quaternionVector(const quaternion<double> quaternion) {
-	return sqrt(pow(quaternion.R_component_2(), 2)
-		    + pow(quaternion.R_component_3(), 2)
-		    + pow(quaternion.R_component_4(), 2));
-}
-
-double calculateQuaternionVector(const quaternion<double> quaternion) {
-	return quaternionVector(quaternion);
-}
-
-bool compareQuaternionVectorCriteria(const quaternion<double> quaternion) {
-	return calculateQuaternionVector(quaternion) == 0 ? true : false;
-}
-
-// Nie chce mi sie kompilowac i nie wiem czemu :<
-//bool compareNormalizedQuaternionScalarCriteria(quaternion<double> quaternion) {
-//	return normalizeQuaternion(quaternion).R_component_1 < 0 ? true : false;
-//}
-
-bool compareNormalizedNonRelaxedQuaternionVectorCriteria(const quaternion<double> quaternion) {
-	return quaternionVector(normalizeQuaternion(quaternion)) == 0 ? true : false;
-}
-
-void detectIdealEdgeByThresholding() {
-	if (compareQuaternionScalarCriteria && compareQuaternionVectorCriteria) {
-
-	}
-}
-// </KAMIL>
 int main()
 {
 	rgb8_image_t img;
+
 	//jpeg_read_image("..\\..\\Images\\tulips.jpg", img);
+	//rgb8_pixel_t color1(237, 157, 157); // odcien czerwonego
+	//rgb8_pixel_t color2(255, 255, 255); // bialy
+
 	jpeg_read_image("..\\..\\Images\\colours.jpg", img);
+	rgb8_pixel_t color1(255, 0, 0); // czerwony
+	rgb8_pixel_t color2(0, 0, 255); // niebieski
+
 	int imageWidth = img.width();
 	int imageHeight = img.height();
 	printf("Image width: %i\n", imageWidth);
 	printf("Image height: %i\n", imageHeight);
 	vector<vector<quaternion<double>>> quaternionMatrix = ConvertRGBImageToQuaternionMatrix(img);
-	rgb8_pixel_t color1(255, 0, 0); // czerwony
-	rgb8_pixel_t color2(0, 0, 255); // niebieski
+
 	vector<vector<quaternion<double>>> quaternionMatrixAfterFilter = ApplyHypercomplexFilter(quaternionMatrix, color1, color2);
 	rgb8_image_t vectorImage = ConvertQuaternionMatrixToRGBImage(quaternionMatrixAfterFilter);
 	jpeg_write_view("RGBImageAfterHypercomplexFilter.jpg", view(vectorImage));
