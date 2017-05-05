@@ -11,7 +11,7 @@
 using namespace boost::gil;
 using namespace boost::math;
 using namespace std;
-
+const double MID_GREY_COLOR = 127.5;
 vector<vector<quaternion<double>>> ConvertRGBImageToQuaternionMatrix(rgb8_image_t &image)
 {
 	// Obraz 768x512x3 jest zamieniany na macierz kwaternionow o rozmiarze 768x512.
@@ -28,7 +28,7 @@ vector<vector<quaternion<double>>> ConvertRGBImageToQuaternionMatrix(rgb8_image_
 		rgb8_view_t::x_iterator rowIterator = image._view.row_begin(row);
 		for (int column = 0; column < imageWidth; ++column)
 		{
-			quaternionMatrix[row][column] = quaternion<double>(0, rowIterator[column][0] - 127.5, rowIterator[column][1] - 127.5, rowIterator[column][2] - 127.5);
+			quaternionMatrix[row][column] = quaternion<double>(0, rowIterator[column][0] - MID_GREY_COLOR, rowIterator[column][1] - MID_GREY_COLOR, rowIterator[column][2] - MID_GREY_COLOR);
 		}
 	}
 	return quaternionMatrix;
@@ -45,9 +45,9 @@ rgb8_image_t ConvertQuaternionMatrixToRGBImage(vector<vector<quaternion<double>>
 	{
 		for (int y = 0; y < imageHeight; ++y)
 		{
-			double r = quaternionMatrix[y][x].R_component_2() + 127.5;
-			double g = quaternionMatrix[y][x].R_component_3() + 127.5;
-			double b = quaternionMatrix[y][x].R_component_4() + 127.5;
+			double r = quaternionMatrix[y][x].R_component_2() + MID_GREY_COLOR;
+			double g = quaternionMatrix[y][x].R_component_3() + MID_GREY_COLOR;
+			double b = quaternionMatrix[y][x].R_component_4() + MID_GREY_COLOR;
 			v(x, y) = rgb8_pixel_t((unsigned char)r, (unsigned char)g, (unsigned char)b);
 		}
 	}
@@ -65,7 +65,7 @@ gray8_image_t ConvertQuaternionMatrixToGrayImage(vector<vector<quaternion<double
 	{
 		for (int y = 0; y < imageHeight; ++y)
 		{
-			double a = quaternionMatrix[y][x].R_component_1() + 127.5;
+			double a = quaternionMatrix[y][x].R_component_1() + MID_GREY_COLOR;
 			v(x, y) = gray8_pixel_t((unsigned char)a);
 		}
 	}
@@ -93,8 +93,8 @@ vector<vector<quaternion<double>>> ApplyHypercomplexFilter(vector<vector<quatern
 	vector<vector<quaternion<double>>> leftMask(3, rowOfEmptyQuaternionsForMasks);
 	vector<vector<quaternion<double>>> rightMask(3, rowOfEmptyQuaternionsForMasks);
 	vector<vector<quaternion<double>>> imageAfterFilter(imageHeight, rowOfEmptyQuaternionsForImage);
-	quaternion<double> quaternionC1(0, color1[0] - 127.5, color1[1] - 127.5, color1[2] - 127.5);
-	quaternion<double> quaternionC2(0, color2[0] - 127.5, color2[1] - 127.5, color2[2] - 127.5);
+	quaternion<double> quaternionC1(0, color1[0] - MID_GREY_COLOR, color1[1] - MID_GREY_COLOR, color1[2] - MID_GREY_COLOR);
+	quaternion<double> quaternionC2(0, color2[0] - MID_GREY_COLOR, color2[1] - MID_GREY_COLOR, color2[2] - MID_GREY_COLOR);
 	quaternion<double> normalizedQuaternionC1 = normalizeQuaternion(quaternionC1);
 	quaternion<double> normalizedQuaternionC2 = normalizeQuaternion(quaternionC2);
 	leftMask[0][0] = normalizedQuaternionC2 / sqrt(6);
