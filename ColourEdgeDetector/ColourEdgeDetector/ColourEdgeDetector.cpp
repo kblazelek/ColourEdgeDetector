@@ -7,12 +7,26 @@
 #include <boost/gil/extension/io/jpeg_io.hpp>
 #include <boost/math/quaternion.hpp>
 #include <boost/numeric/ublas/vector.hpp>
+#include "boost/filesystem.hpp"
 #include <cmath>
 
+using namespace boost::filesystem;
 using namespace boost::gil;
 using namespace boost::math;
 using namespace std;
 const double MID_GREY_COLOR = 127.5;
+string inputImage;
+string outputDir;
+bool showScalarPart = false;
+bool showVectorPart = false;
+string colour1Red;
+string colour1Green;
+string colour1Blue;
+string colour2Red;
+string colour2Green;
+string colour2Blue;
+rgb8_pixel_t colour1;
+rgb8_pixel_t colour2;
 
 quaternion<double> ConvertColorToQuaternion(rgb8_pixel_t color)
 {
@@ -32,13 +46,23 @@ rgb8_pixel_t ConvertQuaternionToColor(quaternion<double> quaternion)
 	return rgb8_pixel_t(red, green, blue);
 }
 
+quaternion<double> NormalizeQuaternion(const quaternion<double> &q)
+{
+	double a = q.R_component_1();
+	double i = q.R_component_2();
+	double j = q.R_component_3();
+	double k = q.R_component_4();
+	double inv_len = 1.0f / std::sqrt(a * a + i * i + j * j + k * k);
+	return q * inv_len;
+}
+
 vector<vector<quaternion<double>>> ConvertRGBImageToQuaternionMatrix(rgb8_image_t &image)
 {
 	// Obraz 768x512x3 jest zamieniany na macierz kwaternionow o rozmiarze 768x512.
 	// Dla pixela o barwie (R,G,B) = (10,20,30) kwaternion (czysty) dla 24 bitowego obrazu wyglada nastepujaco:
 	// Q = 0 + (10 - 127,5)b + (20 - 127,5)c + (30 - 127,5)d
 	// (127,5, 127,5, 127,5) to centrum skali szarosci
-	cout << "Zamiana obrazu RGB na macierz kwaternionow... " << "\n";
+	cout << "Converting RGB image to quaternion matrix... " << "\n";
 	int imageWidth = image.width();
 	int imageHeight = image.height();
 	quaternion<double> emptyQuaternion(0, 0, 0, 0);
@@ -61,7 +85,7 @@ vector<vector<quaternion<double>>> ConvertRGBImageToQuaternionMatrix(rgb8_image_
 
 rgb8_image_t ConvertQuaternionMatrixToRGBImage(vector<vector<quaternion<double>>> quaternionMatrix)
 {
-	cout << "Zamiana macierzy kwaternionow na obraz RGB... " << "\n";
+	cout << "Converting vector part of quaternion matrix to RGB image... " << "\n";
 	int imageWidth = quaternionMatrix.size();
 	int imageHeight = quaternionMatrix[0].size();
 	rgb8_image_t img(imageWidth, imageHeight);
@@ -78,7 +102,7 @@ rgb8_image_t ConvertQuaternionMatrixToRGBImage(vector<vector<quaternion<double>>
 
 gray8_image_t ConvertQuaternionMatrixToGrayImage(vector<vector<quaternion<double>>> quaternionMatrix)
 {
-	cout << "Zamiana macierzy kwaternionow na obraz w skali szarosci... " << "\n";
+	cout << "Converting scalar part of quaternion matrix to grayscale image... " << "\n";
 	int imageWidth = quaternionMatrix.size();
 	int imageHeight = quaternionMatrix[0].size();
 	gray8_image_t img(imageWidth, imageHeight);
@@ -94,18 +118,9 @@ gray8_image_t ConvertQuaternionMatrixToGrayImage(vector<vector<quaternion<double
 	return img;
 }
 
-quaternion<double> NormalizeQuaternion(const quaternion<double> &q)
-{
-	double a = q.R_component_1();
-	double i = q.R_component_2();
-	double j = q.R_component_3();
-	double k = q.R_component_4();
-	double inv_len = 1.0f / std::sqrt(a * a + i * i + j * j + k * k);
-	return q * inv_len;
-}
 gray8_image_t ApplyRelaxedThreshold(vector<vector<quaternion<double>>> quaternionMatrix, rgb8_pixel_t color1, rgb8_pixel_t color2)
 {
-	cout << "Progowanie i zamiana macierzy kwaternionow na obraz w skali szarosci... " << "\n";
+	cout << "Thresholding and saving detected edges as grayscale image... " << "\n";
 	int imageWidth = quaternionMatrix.size();
 	int imageHeight = quaternionMatrix[0].size();
 	gray8_image_t img(imageWidth, imageHeight);
@@ -142,7 +157,7 @@ gray8_image_t ApplyRelaxedThreshold(vector<vector<quaternion<double>>> quaternio
 			double k = quaternionMatrix[x][y].R_component_4();
 			double vectorModule = sqrt(i*i + j*j + k*k);
 			double scalarModule = sqrt(a*a);
-			if (a < 0 && vectorModule/scalarModule < thresholdValue) // Mamy krawedz
+			if (a < 0 && vectorModule / scalarModule < thresholdValue) // Mamy krawedz
 			{
 				v(x, y) = gray8_pixel_t(0); // Czarny pixel
 			}
@@ -156,7 +171,7 @@ gray8_image_t ApplyRelaxedThreshold(vector<vector<quaternion<double>>> quaternio
 }
 vector<vector<quaternion<double>>> ApplyHypercomplexFilter(vector<vector<quaternion<double>>> quaternionMatrix, rgb8_pixel_t color1, rgb8_pixel_t color2)
 {
-	cout << "Stosowanie filtru hiperzespolonego... " << "\n";
+	cout << "Applying hypercomplex filter to detect horizontal edges... " << "\n";
 	int imageWidth = quaternionMatrix.size();
 	int imageHeight = quaternionMatrix[0].size();
 	quaternion<double> emptyQuaternion(0, 0, 0, 0);
@@ -208,33 +223,257 @@ vector<vector<quaternion<double>>> ApplyHypercomplexFilter(vector<vector<quatern
 	return imageAfterFilter;
 }
 
-int main()
+void ShowHelp()
 {
+	std::cerr << "Options:\n"
+		<< "\t--help\t\tShow this help message" << std::endl
+		<< "\t--inputImage PathToInputImage\t\tMandatory. Path to input image" << std::endl
+		<< "\t--colour1 red green blue\t\tMandatory. First color between which to look for edges" << std::endl
+		<< "\t--colour2 red green blue\t\tMandatory. Second color between which to look for edges" << std::endl
+		<< "\t--outputDir PathToOutputDir\t\tOptional. Path to output directory" << std::endl
+		<< "\t--showScalarPart\t\tOptional. Save scalar part of quaternion matrix as grayscale image" << std::endl
+		<< "\t--showVectorPart\t\tOptional. Save vector part of quaternion matrix as RGB image" << std::endl
+		<< "Example 1:" << std::endl
+		<< "--inputImage \"C:\\colours.jpg\" --colour1 255 0 0 --colour2 0 0 255 --showScalarPart --showVectorPart" << std::endl
+		<< "Example 2:" << std::endl
+		<< "--inputImage \"C:\\colours.jpg\" --colour1 255 0 0 --colour2 0 0 255 --showScalarPart --showVectorPart --outputDir \"C:\\Output\"" << std::endl
+		<< "Remarks:" << std::endl
+		<< "Only 24 bit jpg images are supported as input image." << std::endl;
+}
+
+bool GetParameters(int argc, char* argv[])
+{
+	if (argc < 11) {
+		ShowHelp();
+		return false;
+	}
+	for (int i = 1; i < argc; ++i)
+	{
+		std::string arg = argv[i];
+		if (arg == "--help")
+		{
+			ShowHelp();
+			return false;
+		}
+		else if (arg == "--inputImage")
+		{
+			if (i + 1 < argc)
+			{
+				inputImage = argv[++i];
+			}
+			else
+			{
+				std::cerr << "--inputImage option requires one argument" << std::endl;
+				return false;
+			}
+		}
+		else if (arg == "--outputDir")
+		{
+			if (i + 1 < argc)
+			{
+				outputDir = argv[++i];
+			}
+			else
+			{
+				std::cerr << "--outputDir option requires one argument" << std::endl;
+				return false;
+			}
+		}
+		else if (arg == "--colour1")
+		{
+			if (i + 3 < argc)
+			{
+				colour1Red = argv[++i];
+				colour1Green = argv[++i];
+				colour1Blue = argv[++i];
+			}
+			else
+			{
+				std::cerr << "--colour1 option requires three arguments" << std::endl;
+				return false;
+			}
+		}
+		else if (arg == "--colour2")
+		{
+			if (i + 3 < argc)
+			{
+				colour2Red = argv[++i];
+				colour2Green = argv[++i];
+				colour2Blue = argv[++i];
+			}
+			else
+			{
+				std::cerr << "--colour2 option requires three arguments" << std::endl;
+				return false;
+			}
+		}
+		else if (arg == "--showScalarPart")
+		{
+			showScalarPart = true;
+		}
+		else if (arg == "--showVectorPart")
+		{
+			showVectorPart = true;
+		}
+	}
+	return true;
+}
+
+bool ValidateParameters()
+{
+	if (inputImage.empty())
+	{
+		std::cerr << "--inputImage option is mandatory" << std::endl;
+		return false;
+	}
+	if (!exists(inputImage))
+	{
+		std::cerr << "Provided input image does not exist" << std::endl;
+		return false;
+	}
+	if (extension(inputImage) != ".jpg")
+	{
+		std::cerr << "Provided input image is not a jpg image. Only 24 bit jpg images are supported" << std::endl;
+		return false;
+	}
+	if (!outputDir.empty())
+	{
+		if (outputDir.back() != '\\')
+		{
+			outputDir.push_back('\\');
+		}
+		if (!is_directory(outputDir))
+		{
+			cout << "Directory " << outputDir << " does not exist. Creating it right now" << std::endl;
+			try
+			{
+				create_directories(outputDir);
+			}
+			catch (exception& e)
+			{
+				cout << "Could not create directory " << outputDir << std::endl;
+				return false;
+			}
+		}
+	}
+	unsigned long red;
+	unsigned long green;
+	unsigned long blue;
+
+	// Validate colour 1
+	try
+	{
+		red = stoul(colour1Red);
+		green = stoul(colour1Green);
+		blue = stoul(colour1Blue);
+		if (red > 255 || green > 255 || blue > 255)
+		{
+			cout << "Wrong colour range for colour 1. Colour ranges must be from 0 to 255";
+		}
+		else
+		{
+			colour1 = rgb8_pixel_t(red, green, blue);
+		}
+	}
+	catch(exception& e)
+	{
+		cout << "Could not parse colour 1. Please provide colour in valid format, for example --colour1 255 255 255";
+		return false;
+	}
+
+	// Validate colour 2
+	try
+	{
+		red = stoul(colour2Red);
+		green = stoul(colour2Green);
+		blue = stoul(colour2Blue);
+		if (red > 255 || green > 255 || blue > 255)
+		{
+			cout << "Wrong colour range for colour 2. Colour ranges must be from 0 to 255";
+		}
+		else
+		{
+			colour2 = rgb8_pixel_t(red, green, blue);
+		}
+	}
+	catch (exception& e)
+	{
+		cout << "Could not parse colour 2. Please provide colour in valid format, for example --colour2 255 255 255";
+		return false;
+	}
+	return true;
+}
+
+int main(int argc, char* argv[])
+{
+	bool shouldContinue = GetParameters(argc, argv);
+	if (!shouldContinue)
+	{
+		return 1;
+	}
+	shouldContinue = ValidateParameters();
+	if (!shouldContinue)
+	{
+		return 1;
+	}
+	
 	rgb8_image_t img;
-
-	//jpeg_read_image("..\\..\\Images\\tulips.jpg", img);
-	//rgb8_pixel_t color1(237, 157, 157); // odcien czerwonego
-	//rgb8_pixel_t color2(255, 255, 255); // bialy
-
-	jpeg_read_image("..\\..\\Images\\colours.jpg", img);
-	rgb8_pixel_t color1(255, 0, 0); // czerwony
-	rgb8_pixel_t color2(0, 0, 255); // niebieski
-
+	jpeg_read_image(inputImage, img);
 	int imageWidth = img.width();
 	int imageHeight = img.height();
-	printf("Image width: %i\n", imageWidth);
-	printf("Image height: %i\n", imageHeight);
+	printf("Input image width: %i\n", imageWidth);
+	printf("Input image height: %i\n", imageHeight);
 	vector<vector<quaternion<double>>> quaternionMatrix = ConvertRGBImageToQuaternionMatrix(img);
-
-	vector<vector<quaternion<double>>> quaternionMatrixAfterFilter = ApplyHypercomplexFilter(quaternionMatrix, color1, color2);
-	rgb8_image_t vectorImage = ConvertQuaternionMatrixToRGBImage(quaternionMatrixAfterFilter);
-	jpeg_write_view("RGBImageAfterHypercomplexFilter.jpg", view(vectorImage));
-	gray8_image_t scalarImage = ConvertQuaternionMatrixToGrayImage(quaternionMatrixAfterFilter);
-	jpeg_write_view("GrayScaleImageAfterHypercomplexFilter.jpg", view(scalarImage));
-	gray8_image_t edgeImage = ApplyRelaxedThreshold(quaternionMatrixAfterFilter, color1, color2);
-	jpeg_write_view("Edge.jpg", view(edgeImage));
-	cout << "Gotowe\n";
+	vector<vector<quaternion<double>>> quaternionMatrixAfterFilter = ApplyHypercomplexFilter(quaternionMatrix, colour1, colour2);
+	if (showVectorPart)
+	{
+		stringstream ss;
+		ss << outputDir << basename(inputImage) << "_VectorPart.jpg";
+		string outputImagePath = ss.str();
+		rgb8_image_t vectorImage = ConvertQuaternionMatrixToRGBImage(quaternionMatrixAfterFilter);
+		try
+		{
+			jpeg_write_view(outputImagePath, view(vectorImage));
+		}
+		catch (exception& e)
+		{
+			cout << "Could not save vector part of quaternion matrix to " << outputImagePath;
+			return 1;
+		}
+	}
+	if (showScalarPart)
+	{
+		stringstream ss;
+		ss << outputDir << basename(inputImage) << "_ScalarPart.jpg";
+		string outputImagePath = ss.str();
+		gray8_image_t scalarImage = ConvertQuaternionMatrixToGrayImage(quaternionMatrixAfterFilter);
+		try
+		{
+			jpeg_write_view(outputImagePath, view(scalarImage));
+		}
+		catch (exception& e)
+		{
+			cout << "Could not save scalar part of quaternion matrix to " << outputImagePath;
+			return 1;
+		}
+	}
+	stringstream ss;
+	ss << outputDir << basename(inputImage) << "_Edges.jpg";
+	string outputImagePath = ss.str();
+	gray8_image_t edgeImage = ApplyRelaxedThreshold(quaternionMatrixAfterFilter, colour1, colour2);
+	try
+	{
+		jpeg_write_view(outputImagePath, view(edgeImage));
+	}
+	catch (exception& e)
+	{
+		cout << "Could not save image containing edges from input image to " << outputImagePath;
+		return 1;
+	}
+	cout << "Done\n";
+#ifdef DEBUG
 	getchar();
+#endif
 	return 0;
 }
 
